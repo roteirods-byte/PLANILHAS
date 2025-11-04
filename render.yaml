@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: planilhas-panel
-    env: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.address 0.0.0.0 --server.port $PORT
