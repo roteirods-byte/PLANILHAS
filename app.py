@@ -199,3 +199,6 @@ with tab_saida:
     df_saida = pd.DataFrame(data_saida)
     st.dataframe(df_saida.style.applymap(colorir_sinal, subset=['SIDE']), use_container_width=True, hide_index=True)
     st.toggle("Auto-refresh ligado", value=True)
+
+import sys, streamlit as st, pandas as pd
+st.caption(f"Py {sys.version.split()[0]} | streamlit {st.__version__} | pandas {pd.__version__}")
