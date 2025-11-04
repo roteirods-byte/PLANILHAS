@@ -1,13 +1,18 @@
-import storage
 import streamlit as st
 import pandas as pd
 import datetime
+import storage # Módulo para comunicação com o PostgreSQL
+import os # Para ler variáveis de ambiente, se necessário
 
-# Configuração da página
+# --- CONFIGURAÇÃO INICIAL E VERIFICAÇÃO ---
+
+# 1. Tenta inicializar o banco de dados (cria as tabelas se não existirem)
+storage.initialize_database()
+
+# 2. Configuração da página
 st.set_page_config(layout="wide", page_title="Autotrader Dashboard")
 
-# --- CSS CUSTOMIZADO ---
-# (Copiado do PROMPT-MESTRE e adaptado)
+# --- CSS CUSTOMIZADO (Seu padrão visual - Nível Profissional) ---
 st.markdown("""
 <style>
     /* Fundo principal e texto */
@@ -50,10 +55,34 @@ st.markdown("""
     /* Estilo para as tabelas (DataFrames) */
     .stDataFrame {
         width: 100%;
+        /* Aplicar cor de fundo escura nas células para o contraste */
+        color: #e7edf3;
     }
 </style>
 """, unsafe_allow_html=True)
 
+
+# --- FUNÇÃO PARA COLORIR SINAIS NAS TABELAS ---
+def colorir_sinal(val):
+    """Aplica cores para as palavras LONG/SHORT e Ganho/Perda."""
+    color = 'white'
+    # Sinal (LONG/SHORT)
+    if val == 'LONG':
+        color = 'lightgreen'
+    elif val == 'SHORT':
+        color = 'lightcoral'
+        
+    # PNL (Ganho/Perda) - Assume que a coluna tem valores numéricos
+    try:
+        if isinstance(val, (int, float)):
+            if val > 0:
+                color = 'lightgreen'
+            elif val < 0:
+                color = 'lightcoral'
+    except:
+        pass # Ignora se não for número
+
+    return f'color: {color}'
 
 # --- CRIAÇÃO DOS PAINÉIS (ABAS) ---
 tab_email, tab_moedas, tab_entrada, tab_saida = st.tabs([
@@ -63,138 +92,151 @@ tab_email, tab_moedas, tab_entrada, tab_saida = st.tabs([
 # --- PAINEL E-MAIL ---
 with tab_email:
     st.header("Configuração de E-mail")
+    # Lógica simplificada: usa variáveis de ambiente para o Render
 
-    # Layout com colunas para alinhar os campos
-    col1, col2, col3, col4 = st.columns([2.6, 2.6, 2.6, 2.6]) # Proporções para espaçamento
+    col1, col2, col3, col4 = st.columns([2.6, 2.6, 2.6, 2.6])
+
+    # Valores iniciais lidos das variáveis de ambiente (se existirem)
+    mail_user_default = os.environ.get("MAIL_USER", "usuario@exemplo.com")
+    mail_pass_default = os.environ.get("MAIL_PASS", "senha_app_secreta")
+    mail_to_default = os.environ.get("MAIL_TO", "destinatario@exemplo.com")
 
     with col1:
-        st.text_input("Principal (remetente):", value="roteiro.ds@gmail.com", key="mail_user")
+        # Nota: O valor aqui é um placeholder. No Render, as variáveis são lidas de forma segura.
+        st.text_input("Principal (remetente):", value=mail_user_default, key="mail_user")
     with col2:
-        st.text_input("Senha (App Password):", value="••••••••••••••••", type="password", key="mail_pass")
+        st.text_input("Senha (App Password):", value=mail_pass_default, type="password", key="mail_pass")
     with col3:
-        st.text_input("Envio (destinatário):", value="jtiroch@hotmail.com", key="mail_to")
+        st.text_input("Envio (destinatário):", value=mail_to_default, key="mail_to")
 
-    # Botão e status na mesma linha
-    btn_col, status_col = st.columns([2.6, 5.2]) # Botão ocupa menos espaço que o status
+    btn_col, status_col = st.columns([2.6, 5.2])
     with btn_col:
         if st.button("TESTAR/SALVAR"):
-            # Lógica de teste virá aqui
-            st.success("Configuração salva e e-mail de teste enviado ✅")
-            # st.error("Falha ao enviar e-mail: [detalhe do erro]")
+            # Lógica de teste de e-mail e salvamento no DB virá aqui
+            st.success("Configuração salva e e-mail de teste enviado (Simulação) ✅")
 
 # --- PAINEL MOEDAS ---
 with tab_moedas:
     st.header("Painel de Moedas")
 
+    # Adição de novas moedas
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.text_input("Nova(s) moeda(s) (ex: BTC, ETH, SOL):", placeholder="Adicione símbolos separados por vírgula ou espaço")
+        new_symbols = st.text_input("Nova(s) moeda(s) (ex: BTC/USDT, ETH/USDT):", placeholder="Adicione símbolos separados por vírgula ou espaço")
 
     with col2:
-        st.write("") # Espaçamento
-        st.write("") # Espaçamento
-        st.button("Adicionar")
+        st.write("") 
+        st.write("") 
+        if st.button("Adicionar Moedas"):
+            if new_symbols:
+                # Lógica para adicionar moedas no banco de dados (storage) virá aqui
+                st.success(f"Moedas {new_symbols} adicionadas para monitoramento.")
+            else:
+                st.warning("Nenhuma moeda informada.")
 
-    # Dados de exemplo para a tabela de moedas
-    moedas_data = {
-        'Símbolo': ['AAVE', 'ADA', 'APT', 'ARB', 'ATOM', 'AVAX', 'AXS', 'BCH'],
-        'Ativo': [True, True, False, True, True, False, True, True],
-        'Observação': ['DeFi', 'Layer 1', 'Layer 1', 'Layer 2', 'Cosmos Hub', 'Layer 1', 'Gaming', 'Fork do BTC']
-    }
-    moedas_df = pd.DataFrame(moedas_data)
 
-    st.write("Moedas Monitoradas")
-    st.data_editor(moedas_df, use_container_width=True, hide_index=True) # data_editor permite edição
-    st.info("Total: 8 pares (ordem alfabética)")
+    # Dados de moedas lidos do banco de dados (storage.py)
+    moedas_df = storage.load_data_for_panel('moedas', limit=100)
+    
+    # Valida se o DataFrame não está vazio
+    if moedas_df.empty:
+        st.info("Nenhuma moeda encontrada no banco de dados. Adicione moedas para monitorar.")
+    else:
+        # Edição e exibição da tabela de moedas
+        st.write("Moedas Monitoradas")
+        # data_editor permite marcar/desmarcar a coluna 'ativo'
+        edited_df = st.data_editor(
+            moedas_df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_order=('simbolo', 'ativo', 'observacao', 'created_at')
+        ) 
+        # Lógica para salvar mudanças no edited_df no DB virá aqui
+        
+        st.info(f"Total: {len(moedas_df)} pares (ordem por adição)")
 
 
 # --- PAINEL ENTRADA ---
 with tab_entrada:
     st.header("Painel Monitoramento de Entrada")
 
-    # Dados de exemplo
-    data_entrada_swing = {
-        "PAR": ["AAVE", "ADA", "ARB", "ATOM", "AVAX"],
-        "SINAL": ["NÃO ENTRAR", "NÃO ENTRAR", "SHORT", "SHORT", "SHORT"],
-        "PREÇO": [81.767, 123.105, 86.613, 20.741, 91.193],
-        "ALVO": [0.0, 125.784, 80.412, 19.685, 85.944],
-        "GANHO%": [0.00, 2.18, -7.16, -5.09, -5.76],
-        "ASSERT%": [58.00, 62.00, 58.00, 61.00, 61.00],
-        "DATA": ["2025-10-06"] * 5,
-        "HORA": ["05:04:09"] * 5
-    }
-    df_entrada_swing = pd.DataFrame(data_entrada_swing)
+    # Dados lidos do banco de dados (tabela 'entradas')
+    df_entradas = storage.load_data_for_panel('entradas', limit=100)
 
-    data_entrada_posicional = {
-        "PAR": ["AAVE", "ADA", "ARB", "ATOM", "AVAX"],
-        "SINAL": ["NÃO ENTRAR", "NÃO ENTRAR", "SHORT", "SHORT", "SHORT"],
-        "PREÇO": [62.434, 61.062, 76.573, 55.862, 172.125],
-        "ALVO": [0.0, 62.391, 71.092, 53.019, 162.218],
-        "GANHO%": [0.00, 2.18, -7.16, -5.09, -5.76],
-        "ASSERT%": [58.00, 62.00, 58.00, 61.00, 61.00],
-        "DATA": ["2025-10-06"] * 5,
-        "HORA": ["05:04:10"] * 5
-    }
-    df_entrada_posicional = pd.DataFrame(data_entrada_posicional)
+    if df_entradas.empty:
+        st.info("Nenhum sinal de entrada registrado no banco de dados pelo Worker.")
+    else:
+        # Simplificação do seu modelo: usamos apenas uma tabela, mas separamos visualmente
+        # Esta separação pode ser feita com filtros se o DB tiver uma coluna 'modo' (Swing/Posicional)
 
-    # Função para colorir
-    def colorir_sinal(val):
-        color = 'white'
-        if val == 'LONG':
-            color = 'lightgreen'
-        elif val == 'SHORT':
-            color = 'lightcoral'
-        return f'color: {color}'
+        # Filtro de exemplo: Simula as duas planilhas do seu print
+        df_swing = df_entradas[df_entradas['modo'] == 'AUTO'].head(10)
+        df_posicional = df_entradas[df_entradas['modo'] == ' MANUAL'].head(10)
+        
+        # Função para colorir LONG/SHORT
+        def color_by_side(val):
+            return [colorir_sinal(v) for v in val]
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("Entrada 4H - SWING")
-        st.dataframe(df_entrada_swing.style.applymap(colorir_sinal, subset=['SINAL']), use_container_width=True, hide_index=True)
-    with col2:
-        st.subheader("Entrada 1H - POSICIONAL")
-        st.dataframe(df_entrada_posicional.style.applymap(colorir_sinal, subset=['SINAL']), use_container_width=True, hide_index=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Entrada 4H - SWING")
+            st.dataframe(
+                df_swing.style.apply(color_by_side, subset=['side']).applymap(colorir_sinal, subset=['preco_entrada']),
+                use_container_width=True, 
+                hide_index=True
+            )
+        with col2:
+            st.subheader("Entrada 1H - POSICIONAL")
+            st.dataframe(
+                df_posicional.style.apply(color_by_side, subset=['side']).applymap(colorir_sinal, subset=['preco_entrada']),
+                use_container_width=True, 
+                hide_index=True
+            )
 
 # --- PAINEL SAÍDA ---
 with tab_saida:
     st.header("Painel Monitoramento de Saída")
 
-    st.write("---") # Linha divisória
+    st.write("---") 
 
-    # Controles de entrada de nova operação
-    st.subheader("Adicionar Nova Operação")
+    # Controles de entrada manual de nova operação
+    st.subheader("Adicionar Nova Operação (Manual)")
     c1, c2, c3, c4, c5, c6 = st.columns(6)
+    
+    # Simplificado para Modos do seu print
+    MODOS = ["Swing", "Posicional"] 
+    
     with c1:
-        st.selectbox("Par", ["BTC", "ETH", "SOL"], index=0)
+        st.selectbox("Par", storage.get_active_symbols() or ["BTC/USDT", "ETH/USDT"], index=0)
     with c2:
         st.selectbox("Side", ["LONG", "SHORT"])
     with c3:
-        st.selectbox("Modo", ["Swing-friendly", "Posicional"])
+        st.selectbox("Modo", MODOS)
     with c4:
-        st.number_input("Entrada", value=1.220, format="%.3f")
+        st.number_input("Entrada", value=1.000, format="%.4f")
     with c5:
-        st.number_input("Alav.", value=5)
+        st.number_input("Alav.", value=1, min_value=1)
     with c6:
         st.write("")
         st.write("")
-        st.button("Adicionar Operação")
+        if st.button("Adicionar Operação"):
+            st.success("Operação manual adicionada (Lógica de salvamento será implementada aqui)")
 
-    st.write("---") # Linha divisória
+    st.write("---") 
 
     # Tabela de monitoramento
     st.subheader("Monitoramento da Operação")
-    data_saida = {
-        "PAR": ["BTC", "FET"],
-        "SIDE": ["SHORT", "LONG"],
-        "MODO": ["Swing-friendly", "Posicional"],
-        "ENTRADA": [1.220, 4.202],
-        "PREÇO ATUAL": [1.215, 4.250],
-        "ALVO": [1.100, 4.500],
-        "PNL%": [-0.41, 1.14],
-        "SITUAÇÃO": ["Aberta", "Aberta"],
-        "DATA": ["2025-09-26", "2025-09-26"],
-        "HORA": ["09:03:43", "09:04:05"],
-        "ALAV": [50, 125],
-    }
-    df_saida = pd.DataFrame(data_saida)
-    st.dataframe(df_saida.style.applymap(colorir_sinal, subset=['SIDE']), use_container_width=True, hide_index=True)
+    
+    # Dados lidos do banco de dados (tabela 'saidas')
+    df_saidas = storage.load_data_for_panel('saidas', limit=100)
+
+    if df_saidas.empty:
+        st.info("Nenhuma operação de saída ou ativa encontrada no banco de dados.")
+    else:
+        # Aplica a cor LONG/SHORT e PNL%
+        st.dataframe(
+            df_saidas.style.applymap(colorir_sinal, subset=['side']).applymap(colorir_sinal, subset=['pnl_percent']),
+            use_container_width=True, 
+            hide_index=True
+        )
     st.toggle("Auto-refresh ligado", value=True)
