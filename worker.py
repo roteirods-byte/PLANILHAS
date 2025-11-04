@@ -3,8 +3,8 @@
 import datetime
 import sys
 import os
-import storage       # Módulo de conexão com o banco de dados (SQLAlchemy)
-import exchange      # Módulo de busca de preços (CCXT)
+import storage       
+import exchange     
 
 # --- CONFIGURAÇÃO ---
 INTERVALO_CRON = "10 minutos"
