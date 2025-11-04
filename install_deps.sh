@@ -3,5 +3,5 @@
 # Comando que instala as dependências
 pip install -r requirements.txt
 
-# Certifica-se de que as instalações foram concluídas
+# Confirma o sucesso da instalação
 echo "Dependências instaladas com sucesso!"
