@@ -6,6 +6,35 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 
+# ===== RESET AUTOMÁTICO A CADA DEPLOY =====
+APP_VERSION = "2025-11-04-01"
+if st.session_state.get("app_version") != APP_VERSION:
+    st.session_state.clear()
+    st.session_state["app_version"] = APP_VERSION
+
+# ===== GARANTIR AS 39 MOEDAS SEMPRE =====
+MOEDAS_OFICIAIS = sorted([
+    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC","DOGE","DOT",
+    "ETH","FET","FIL","FLUX","ICP","INJ","LDO","LINK","LTC","NEAR","OP","PEPE",
+    "POL","RATS","RENDER","RUNE","SEI","SHIB","SOL","SUI","TIA","TNSR","TON",
+    "TRX","UNI","WIF","XRP"
+])
+
+import pandas as pd, streamlit as st  # garantir que estão importados aqui
+
+if ("df_moedas" not in st.session_state) or (len(st.session_state.df_moedas) < 39):
+    st.session_state.df_moedas = pd.DataFrame({
+        "Símbolo": MOEDAS_OFICIAIS,
+        "Ativo": [True]*len(MOEDAS_OFICIAIS),
+        "Observação": ["" for _ in MOEDAS_OFICIAIS],
+    })
+
+# Botão de emergência para resetar sessão manualmente
+def _reset():
+    st.session_state.clear()
+    st.experimental_rerun()
+st.sidebar.button("Resetar painel", on_click=_reset)
+
 # ===================== CONFIG BÁSICA =====================
 st.set_page_config(page_title="AUTOTRADER", layout="wide")
 os.makedirs("data", exist_ok=True)
