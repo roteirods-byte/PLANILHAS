@@ -4,6 +4,30 @@ import datetime
 import os
 os.makedirs("data", exist_ok=True)
 
+# ===== BLOCO PATCH 1 — MOEDAS OFICIAIS E ESTADO INICIAL =====
+import streamlit as st
+import pandas as pd
+
+MOEDAS_OFICIAIS = [
+    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC","DOGE","DOT",
+    "ETH","FET","FIL","FLUX","ICP","INJ","LDO","LINK","LTC","NEAR","OP","PEPE",
+    "POL","RATS","RENDER","RUNE","SEI","SHIB","SOL","SUI","TIA","TNSR","TON",
+    "TRX","UNI","WIF","XRP"
+]
+MOEDAS_OFICIAIS = sorted(MOEDAS_OFICIAIS)
+
+# cria estado padrão de moedas se não existir
+if "df_moedas" not in st.session_state:
+    st.session_state.df_moedas = pd.DataFrame({
+        "Símbolo": MOEDAS_OFICIAIS,
+        "Ativo": [True]*len(MOEDAS_OFICIAIS),
+        "Observação": [""]*len(MOEDAS_OFICIAIS),
+    })
+
+# util debug rápido (remova depois)
+st.caption(f"Moedas carregadas: {len(st.session_state.df_moedas)} (esperado: 39)")
+# ===== FIM BLOCO PATCH 1 =====
+
 # Configuração da página
 st.set_page_config(layout="wide", page_title="Autotrader Dashboard")
 
