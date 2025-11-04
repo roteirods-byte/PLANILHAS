@@ -171,4 +171,78 @@ with aba[0]:
 # ===================== ABA MOEDAS =====================
 with aba[1]:
     st.markdown("### Painel de Moedas")
-    novo = st.text_input("Adicione símbo_
+    novo = st.text_input("Adicione símbolos separados por vírgula (ex: BTC, ETH, SOL):", "")
+    add_col, _ = st.columns([1,3])
+    if add_col.button("Adicionar"):
+        if novo.strip():
+            novos = [x.strip().upper() for x in novo.split(",") if x.strip()]
+            base = st.session_state.df_moedas["Símbolo"].tolist()
+            for n in novos:
+                if n not in base:
+                    st.session_state.df_moedas = pd.concat([
+                        st.session_state.df_moedas,
+                        pd.DataFrame([{"Símbolo":n,"Ativo":True,"Observação":""}])
+                    ], ignore_index=True)
+            # reordena alfabética
+            st.session_state.df_moedas = st.session_state.df_moedas.sort_values("Símbolo").reset_index(drop=True)
+            st.success("Moedas adicionadas.")
+
+    st.dataframe(
+        st.session_state.df_moedas,
+        use_container_width=True,
+        hide_index=True
+    )
+    st.caption(f"Total: {len(st.session_state.df_moedas)} pares (ordem alfabética)")
+
+# ===================== ABA ENTRADA =====================
+with aba[2]:
+    st.markdown("### Painel Monitoramento de Entrada")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.subheader("Entrada 4H – SWING")
+        st.dataframe(styler_entrada(st.session_state.entrada_swing), use_container_width=True, hide_index=True)
+    with c2:
+        st.subheader("Entrada 1H – POSICIONAL")
+        st.dataframe(styler_entrada(st.session_state.entrada_pos), use_container_width=True, hide_index=True)
+
+# ===================== ABA SAÍDA =====================
+with aba[3]:
+    st.markdown("### Painel Monitoramento de Saída")
+
+    # ---- Formulário nova operação ----
+    cpar, cside, cmode, centrada, calav = st.columns([1.2,1,1.2,1,1])
+    par = cpar.selectbox("Par", MOEDAS_OFICIAIS, index=MOEDAS_OFICIAIS.index("ETH") if "ETH" in MOEDAS_OFICIAIS else 0)
+    side = cside.selectbox("Side", ["LONG","SHORT"])
+    modo = cmode.selectbox("Modo", ["Swing-friendly","Posicional"])
+    entrada = centrada.number_input("Entrada", value=1.220, step=0.001, format="%.3f")
+    alav = calav.number_input("Alav.", value=5, step=1, min_value=1)
+
+    if st.button("Adicionar Operação"):
+        data, hora = agora_data_hora()
+        df = st.session_state.saida_ops.copy()
+        nova = {
+            "PAR":par, "SIDE":side, "MODO":modo,
+            "ENTRADA":float(entrada), "PREÇO ATUAL":float(entrada), "ALVO":0.0,
+            "PNL%":0.0, "SITUAÇÃO":"Aberta", "DATA":data, "HORA":hora, "ALAV":int(alav)
+        }
+        df = pd.concat([df, pd.DataFrame([nova])], ignore_index=True)
+        st.session_state.saida_ops = df
+        st.success("Operação adicionada.")
+
+    st.markdown("#### Monitoramento da Operação")
+    df_out = st.session_state.saida_ops.copy()
+
+    # coluna EXCLUIR (botões)
+    if not df_out.empty:
+        for i in range(len(df_out)):
+            col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11, col12 = st.columns([1,1,1,1,1,1,1,1,1,1,1,1])
+            with col12:
+                if st.button("Excluir", key=f"excluir_{i}"):
+                    st.session_state.saida_ops = st.session_state.saida_ops.drop(st.session_state.saida_ops.index[i]).reset_index(drop=True)
+                    st.experimental_rerun()
+
+    st.dataframe(styler_saida(st.session_state.saida_ops), use_container_width=True, hide_index=True)
+
+# Rodapé de verificação de ambiente (remova se quiser)
+st.caption(f"Ambiente: Py {st.__version__[:0] if False else ''} | streamlit {st.__version__} | pandas {pd.__version__}")
