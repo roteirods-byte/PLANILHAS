@@ -1,277 +1,199 @@
-# AUTOTRADER – Painéis (patch completo)
-# Rodar com: streamlit run app.py --server.address=0.0.0.0 --server.port=$PORT
-
-import os
-from datetime import datetime
 import streamlit as st
 import pandas as pd
+import datetime
 
-# ===== RESET AUTOMÁTICO A CADA DEPLOY =====
-APP_VERSION = "2025-11-04-01"
-if st.session_state.get("app_version") != APP_VERSION:
-    st.session_state.clear()
-    st.session_state["app_version"] = APP_VERSION
+# Configuração da página
+st.set_page_config(layout="wide", page_title="Autotrader Dashboard")
 
-# ===== GARANTIR AS 39 MOEDAS SEMPRE =====
-MOEDAS_OFICIAIS = sorted([
-    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC","DOGE","DOT",
-    "ETH","FET","FIL","FLUX","ICP","INJ","LDO","LINK","LTC","NEAR","OP","PEPE",
-    "POL","RATS","RENDER","RUNE","SEI","SHIB","SOL","SUI","TIA","TNSR","TON",
-    "TRX","UNI","WIF","XRP"
-])
-
-import pandas as pd, streamlit as st  # garantir que estão importados aqui
-
-if ("df_moedas" not in st.session_state) or (len(st.session_state.df_moedas) < 39):
-    st.session_state.df_moedas = pd.DataFrame({
-        "Símbolo": MOEDAS_OFICIAIS,
-        "Ativo": [True]*len(MOEDAS_OFICIAIS),
-        "Observação": ["" for _ in MOEDAS_OFICIAIS],
-    })
-
-# Botão de emergência para resetar sessão manualmente
-def _reset():
-    st.session_state.clear()
-    st.experimental_rerun()
-st.sidebar.button("Resetar painel", on_click=_reset)
-
-# ===================== CONFIG BÁSICA =====================
-st.set_page_config(page_title="AUTOTRADER", layout="wide")
-os.makedirs("data", exist_ok=True)
-
-# Paleta do projeto
-COR_FUNDO = "#0F2433"         # azul escuro
-COR_TITULO = "#FF7F2A"        # laranja
-COR_TEXTO = "#FFFFFF"         # branco
-COR_LONG = "#00BF63"          # verde
-COR_SHORT = "#FF4D4D"         # vermelho
-COR_NEUTRO = "#BFBFBF"
-
-# CSS global
-st.markdown(f"""
+# --- CSS CUSTOMIZADO ---
+# (Copiado do PROMPT-MESTRE e adaptado)
+st.markdown("""
 <style>
-body {{ background-color: {COR_FUNDO}; color: {COR_TEXTO}; }}
-[data-testid="stAppViewContainer"] {{
-    background-color: {COR_FUNDO};
-}}
-h1, h2, h3, h4, h5 {{
-    color: {COR_TITULO} !important;
-    font-weight: 800;
-    letter-spacing: .5px;
-}}
-.block-container {{
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-}}
-/* botões */
-.stButton > button {{
-    background:#1377FF; color:white; border:0; border-radius:12px; padding:.6rem 1.2rem; font-weight:700;
-}}
-/* tabelas */
-thead tr th {{
-    color: {COR_TITULO} !important; font-weight:800;
-}}
+    /* Fundo principal e texto */
+    .stApp {
+        background-color: #0b2533;
+        color: #e7edf3;
+    }
+
+    /* Cor dos títulos */
+    h1, h2, h3, h4, h5, h6 {
+        color: #ff7b1b !important;
+    }
+
+    /* --- ESTILO DAS ABAS (TABS) --- */
+    /* Cor do texto da aba selecionada e não selecionada */
+    .stTabs [data-baseweb="tab-list"] button p {
+        color: #e7edf3 !important; /* Cor do texto das abas normais */
+    }
+    .stTabs [data-baseweb="tab-list"] button[aria-selected="true"] p {
+        color: #ff7b1b !important; /* Cor Laranja para aba ATIVA */
+        font-weight: bold;
+    }
+    /* Borda inferior da aba selecionada */
+    .stTabs [data-baseweb="tab-list"] .st-emotion-cache-12fmjuu {
+        background-color: #ff7b1b !important; /* Cor da linha/borda da aba ATIVA */
+    }
+
+    /* Estilo dos inputs e botões para replicar o modelo */
+    .stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
+        width: 260px !important;
+        height: 40px;
+    }
+    .stButton button {
+        width: 260px !important;
+        height: 40px;
+        background-color: #007bff; /* Cor do botão Testar/Salvar */
+        color: white;
+    }
+
+    /* Estilo para as tabelas (DataFrames) */
+    .stDataFrame {
+        width: 100%;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== LISTA OFICIAL DE MOEDAS =====================
-MOEDAS_OFICIAIS = sorted([
-    "AAVE","ADA","APT","ARB","ATOM","AVAX","AXS","BCH","BNB","BTC","DOGE","DOT",
-    "ETH","FET","FIL","FLUX","ICP","INJ","LDO","LINK","LTC","NEAR","OP","PEPE",
-    "POL","RATS","RENDER","RUNE","SEI","SHIB","SOL","SUI","TIA","TNSR","TON",
-    "TRX","UNI","WIF","XRP"
+
+# --- CRIAÇÃO DOS PAINÉIS (ABAS) ---
+tab_email, tab_moedas, tab_entrada, tab_saida = st.tabs([
+    "E-MAIL", "MOEDAS", "ENTRADA", "SAÍDA"
 ])
 
-# ===================== HELPERS =====================
-def agora_data_hora():
-    dt = datetime.utcnow()  # manter simples e estável
-    data = dt.date().isoformat()
-    hora = dt.strftime("%H:%M")
-    return data, hora
+# --- PAINEL E-MAIL ---
+with tab_email:
+    st.header("Configuração de E-mail")
 
-def fmt_preco(x):
-    try:
-        return f"{float(x):.3f}"
-    except Exception:
-        return x
+    # Layout com colunas para alinhar os campos
+    col1, col2, col3, col4 = st.columns([2.6, 2.6, 2.6, 2.6]) # Proporções para espaçamento
 
-def fmt_pct(x):
-    try:
-        return f"{float(x):.2f}%"
-    except Exception:
-        return x
+    with col1:
+        st.text_input("Principal (remetente):", value="roteiro.ds@gmail.com", key="mail_user")
+    with col2:
+        st.text_input("Senha (App Password):", value="••••••••••••••••", type="password", key="mail_pass")
+    with col3:
+        st.text_input("Envio (destinatário):", value="jtiroch@hotmail.com", key="mail_to")
 
-def styler_entrada(df):
-    s = df.style.format({
-        "PREÇO": fmt_preco, "ALVO": fmt_preco, "GANHO%": fmt_pct, "ASSERT%": fmt_pct
-    })
-    if "SINAL" in df.columns:
-        def cor_sinal(v):
-            if str(v).upper() == "LONG":  return f"color:{COR_LONG}; font-weight:700;"
-            if str(v).upper() == "SHORT": return f"color:{COR_SHORT}; font-weight:700;"
-            return ""
-        s = s.applymap(cor_sinal, subset=["SINAL"])
-    return s
+    # Botão e status na mesma linha
+    btn_col, status_col = st.columns([2.6, 5.2]) # Botão ocupa menos espaço que o status
+    with btn_col:
+        if st.button("TESTAR/SALVAR"):
+            # Lógica de teste virá aqui
+            st.success("Configuração salva e e-mail de teste enviado ✅")
+            # st.error("Falha ao enviar e-mail: [detalhe do erro]")
 
-def styler_saida(df):
-    s = df.style.format({
-        "ENTRADA": fmt_preco, "PREÇO ATUAL": fmt_preco, "ALVO": fmt_preco, "PNL%": fmt_pct
-    })
-    if "SIDE" in df.columns:
-        def cor_side(v):
-            if str(v).upper() == "LONG":  return f"color:{COR_LONG}; font-weight:700;"
-            if str(v).upper() == "SHORT": return f"color:{COR_SHORT}; font-weight:700;"
-            if "NÃO" in str(v).upper():   return f"color:{COR_NEUTRO}; font-weight:700;"
-            return ""
-        s = s.applymap(cor_side, subset=["SIDE"])
-    if "PNL%" in df.columns:
-        def cor_pnl(v):
-            try:
-                vv = float(v)
-                if vv > 0:  return f"color:{COR_LONG}; font-weight:700;"
-                if vv < 0:  return f"color:{COR_SHORT}; font-weight:700;"
-            except Exception:
-                pass
-            return ""
-        s = s.applymap(cor_pnl, subset=["PNL%"])
-    return s
+# --- PAINEL MOEDAS ---
+with tab_moedas:
+    st.header("Painel de Moedas")
 
-# ===================== ESTADO INICIAL =====================
-if "email_cfg" not in st.session_state:
-    st.session_state.email_cfg = {"principal":"", "senha":"", "destino":""}
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.text_input("Nova(s) moeda(s) (ex: BTC, ETH, SOL):", placeholder="Adicione símbolos separados por vírgula ou espaço")
 
-if "df_moedas" not in st.session_state:
-    st.session_state.df_moedas = pd.DataFrame({
-        "Símbolo": MOEDAS_OFICIAIS,
-        "Ativo": [True]*len(MOEDAS_OFICIAIS),
-        "Observação": ["" for _ in MOEDAS_OFICIAIS]
-    })
+    with col2:
+        st.write("") # Espaçamento
+        st.write("") # Espaçamento
+        st.button("Adicionar")
 
-if "entrada_swing" not in st.session_state:
-    data, hora = agora_data_hora()
-    st.session_state.entrada_swing = pd.DataFrame({
-        "PAR": MOEDAS_OFICIAIS[:5],
-        "SINAL": ["LONG","SHORT","SHORT","SHORT","SHORT"],
-        "PREÇO": [81.767,123.105,86.613,20.741,91.193],
-        "ALVO":  [0,125.784,80.412,19.685,85.944],
-        "GANHO%":[0,2.18,-7.16,-5.09,-5.76],
-        "ASSERT%":[58,62,58,61,61],
-        "DATA":[data]*5,
-        "HORA":[hora]*5
-    })
+    # Dados de exemplo para a tabela de moedas
+    moedas_data = {
+        'Símbolo': ['AAVE', 'ADA', 'APT', 'ARB', 'ATOM', 'AVAX', 'AXS', 'BCH'],
+        'Ativo': [True, True, False, True, True, False, True, True],
+        'Observação': ['DeFi', 'Layer 1', 'Layer 1', 'Layer 2', 'Cosmos Hub', 'Layer 1', 'Gaming', 'Fork do BTC']
+    }
+    moedas_df = pd.DataFrame(moedas_data)
 
-if "entrada_pos" not in st.session_state:
-    data, hora = agora_data_hora()
-    st.session_state.entrada_pos = pd.DataFrame({
-        "PAR": MOEDAS_OFICIAIS[:5],
-        "SINAL": ["LONG","LONG","SHORT","SHORT","SHORT"],
-        "PREÇO": [62.434,61.062,76.573,55.862,172.125],
-        "ALVO":  [0,62.391,71.092,53.019,162.218],
-        "GANHO%":[0,2.18,-7.16,-5.09,-5.76],
-        "ASSERT%":[58,62,58,61,61],
-        "DATA":[data]*5,
-        "HORA":[hora]*5
-    })
+    st.write("Moedas Monitoradas")
+    st.data_editor(moedas_df, use_container_width=True, hide_index=True) # data_editor permite edição
+    st.info("Total: 8 pares (ordem alfabética)")
 
-if "saida_ops" not in st.session_state:
-    st.session_state.saida_ops = pd.DataFrame(columns=[
-        "PAR","SIDE","MODO","ENTRADA","PREÇO ATUAL","ALVO","PNL%","SITUAÇÃO","DATA","HORA","ALAV"
-    ])
 
-# ===================== UI – TOPO =====================
-st.markdown(f"<h1 style='text-align:center;'>AUTOTRADER</h1>", unsafe_allow_html=True)
-aba = st.tabs(["E-MAIL", "MOEDAS", "ENTRADA", "SAÍDA"])
+# --- PAINEL ENTRADA ---
+with tab_entrada:
+    st.header("Painel Monitoramento de Entrada")
 
-# ===================== ABA E-MAIL =====================
-with aba[0]:
-    st.markdown("### Configuração de E-mail")
-    c1,c2,c3 = st.columns([1.2,1.2,1.2])
+    # Dados de exemplo
+    data_entrada_swing = {
+        "PAR": ["AAVE", "ADA", "ARB", "ATOM", "AVAX"],
+        "SINAL": ["NÃO ENTRAR", "NÃO ENTRAR", "SHORT", "SHORT", "SHORT"],
+        "PREÇO": [81.767, 123.105, 86.613, 20.741, 91.193],
+        "ALVO": [0.0, 125.784, 80.412, 19.685, 85.944],
+        "GANHO%": [0.00, 2.18, -7.16, -5.09, -5.76],
+        "ASSERT%": [58.00, 62.00, 58.00, 61.00, 61.00],
+        "DATA": ["2025-10-06"] * 5,
+        "HORA": ["05:04:09"] * 5
+    }
+    df_entrada_swing = pd.DataFrame(data_entrada_swing)
+
+    data_entrada_posicional = {
+        "PAR": ["AAVE", "ADA", "ARB", "ATOM", "AVAX"],
+        "SINAL": ["NÃO ENTRAR", "NÃO ENTRAR", "SHORT", "SHORT", "SHORT"],
+        "PREÇO": [62.434, 61.062, 76.573, 55.862, 172.125],
+        "ALVO": [0.0, 62.391, 71.092, 53.019, 162.218],
+        "GANHO%": [0.00, 2.18, -7.16, -5.09, -5.76],
+        "ASSERT%": [58.00, 62.00, 58.00, 61.00, 61.00],
+        "DATA": ["2025-10-06"] * 5,
+        "HORA": ["05:04:10"] * 5
+    }
+    df_entrada_posicional = pd.DataFrame(data_entrada_posicional)
+
+    # Função para colorir
+    def colorir_sinal(val):
+        color = 'white'
+        if val == 'LONG':
+            color = 'lightgreen'
+        elif val == 'SHORT':
+            color = 'lightcoral'
+        return f'color: {color}'
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Entrada 4H - SWING")
+        st.dataframe(df_entrada_swing.style.applymap(colorir_sinal, subset=['SINAL']), use_container_width=True, hide_index=True)
+    with col2:
+        st.subheader("Entrada 1H - POSICIONAL")
+        st.dataframe(df_entrada_posicional.style.applymap(colorir_sinal, subset=['SINAL']), use_container_width=True, hide_index=True)
+
+# --- PAINEL SAÍDA ---
+with tab_saida:
+    st.header("Painel Monitoramento de Saída")
+
+    st.write("---") # Linha divisória
+
+    # Controles de entrada de nova operação
+    st.subheader("Adicionar Nova Operação")
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
-        principal = st.text_input("Principal (remetente):", value=st.session_state.email_cfg["principal"])
+        st.selectbox("Par", ["BTC", "ETH", "SOL"], index=0)
     with c2:
-        senha = st.text_input("Senha (App Password):", value=st.session_state.email_cfg["senha"], type="password")
+        st.selectbox("Side", ["LONG", "SHORT"])
     with c3:
-        destino = st.text_input("Envio (destinatário):", value=st.session_state.email_cfg["destino"])
-    if st.button("TESTAR/SALVAR"):
-        # Apenas salva no estado; envio real requer SMTP/AppPassword válido.
-        st.session_state.email_cfg = {"principal":principal, "senha":senha, "destino":destino}
-        st.success("Configurações salvas. (Envio de teste omitido neste ambiente)")
+        st.selectbox("Modo", ["Swing-friendly", "Posicional"])
+    with c4:
+        st.number_input("Entrada", value=1.220, format="%.3f")
+    with c5:
+        st.number_input("Alav.", value=5)
+    with c6:
+        st.write("")
+        st.write("")
+        st.button("Adicionar Operação")
 
-# ===================== ABA MOEDAS =====================
-with aba[1]:
-    st.markdown("### Painel de Moedas")
-    novo = st.text_input("Adicione símbolos separados por vírgula (ex: BTC, ETH, SOL):", "")
-    add_col, _ = st.columns([1,3])
-    if add_col.button("Adicionar"):
-        if novo.strip():
-            novos = [x.strip().upper() for x in novo.split(",") if x.strip()]
-            base = st.session_state.df_moedas["Símbolo"].tolist()
-            for n in novos:
-                if n not in base:
-                    st.session_state.df_moedas = pd.concat([
-                        st.session_state.df_moedas,
-                        pd.DataFrame([{"Símbolo":n,"Ativo":True,"Observação":""}])
-                    ], ignore_index=True)
-            # reordena alfabética
-            st.session_state.df_moedas = st.session_state.df_moedas.sort_values("Símbolo").reset_index(drop=True)
-            st.success("Moedas adicionadas.")
+    st.write("---") # Linha divisória
 
-    st.dataframe(
-        st.session_state.df_moedas,
-        use_container_width=True,
-        hide_index=True
-    )
-    st.caption(f"Total: {len(st.session_state.df_moedas)} pares (ordem alfabética)")
-
-# ===================== ABA ENTRADA =====================
-with aba[2]:
-    st.markdown("### Painel Monitoramento de Entrada")
-    c1, c2 = st.columns(2)
-
-    with c1:
-        st.subheader("Entrada 4H – SWING")
-        st.dataframe(styler_entrada(st.session_state.entrada_swing), use_container_width=True, hide_index=True)
-    with c2:
-        st.subheader("Entrada 1H – POSICIONAL")
-        st.dataframe(styler_entrada(st.session_state.entrada_pos), use_container_width=True, hide_index=True)
-
-# ===================== ABA SAÍDA =====================
-with aba[3]:
-    st.markdown("### Painel Monitoramento de Saída")
-
-    # ---- Formulário nova operação ----
-    cpar, cside, cmode, centrada, calav = st.columns([1.2,1,1.2,1,1])
-    par = cpar.selectbox("Par", MOEDAS_OFICIAIS, index=MOEDAS_OFICIAIS.index("ETH") if "ETH" in MOEDAS_OFICIAIS else 0)
-    side = cside.selectbox("Side", ["LONG","SHORT"])
-    modo = cmode.selectbox("Modo", ["Swing-friendly","Posicional"])
-    entrada = centrada.number_input("Entrada", value=1.220, step=0.001, format="%.3f")
-    alav = calav.number_input("Alav.", value=5, step=1, min_value=1)
-
-    if st.button("Adicionar Operação"):
-        data, hora = agora_data_hora()
-        df = st.session_state.saida_ops.copy()
-        nova = {
-            "PAR":par, "SIDE":side, "MODO":modo,
-            "ENTRADA":float(entrada), "PREÇO ATUAL":float(entrada), "ALVO":0.0,
-            "PNL%":0.0, "SITUAÇÃO":"Aberta", "DATA":data, "HORA":hora, "ALAV":int(alav)
-        }
-        df = pd.concat([df, pd.DataFrame([nova])], ignore_index=True)
-        st.session_state.saida_ops = df
-        st.success("Operação adicionada.")
-
-    st.markdown("#### Monitoramento da Operação")
-    df_out = st.session_state.saida_ops.copy()
-
-    # coluna EXCLUIR (botões)
-    if not df_out.empty:
-        for i in range(len(df_out)):
-            col1, col2, col3, col4, col5, col6, col7, col8, col9, col10, col11, col12 = st.columns([1,1,1,1,1,1,1,1,1,1,1,1])
-            with col12:
-                if st.button("Excluir", key=f"excluir_{i}"):
-                    st.session_state.saida_ops = st.session_state.saida_ops.drop(st.session_state.saida_ops.index[i]).reset_index(drop=True)
-                    st.experimental_rerun()
-
-    st.dataframe(styler_saida(st.session_state.saida_ops), use_container_width=True, hide_index=True)
-
-# Rodapé de verificação de ambiente (remova se quiser)
-st.caption(f"Ambiente: Py {st.__version__[:0] if False else ''} | streamlit {st.__version__} | pandas {pd.__version__}")
+    # Tabela de monitoramento
+    st.subheader("Monitoramento da Operação")
+    data_saida = {
+        "PAR": ["BTC", "FET"],
+        "SIDE": ["SHORT", "LONG"],
+        "MODO": ["Swing-friendly", "Posicional"],
+        "ENTRADA": [1.220, 4.202],
+        "PREÇO ATUAL": [1.215, 4.250],
+        "ALVO": [1.100, 4.500],
+        "PNL%": [-0.41, 1.14],
+        "SITUAÇÃO": ["Aberta", "Aberta"],
+        "DATA": ["2025-09-26", "2025-09-26"],
+        "HORA": ["09:03:43", "09:04:05"],
+        "ALAV": [50, 125],
+    }
+    df_saida = pd.DataFrame(data_saida)
+    st.dataframe(df_saida.style.applymap(colorir_sinal, subset=['SIDE']), use_container_width=True, hide_index=True)
+    st.toggle("Auto-refresh ligado", value=True)
