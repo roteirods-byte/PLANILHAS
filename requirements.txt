@@ -1,7 +1,5 @@
-streamlit
-pandas
-requests
-python-dotenv
-pytz
-sqlalchemy
-psycopg2-binary
+streamlit==1.39.0
+sqlalchemy==2.0.36
+psycopg2-binary==2.9.9
+pandas==2.2.2
+python-dotenv==1.0.1
