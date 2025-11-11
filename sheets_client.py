@@ -4,39 +4,48 @@ import datetime
 from typing import List, Any
 import google.auth
 from googleapiclient.discovery import build
-from config import TAB_LOG, TZINFO
+from googleapiclient.errors import HttpError
+from config import TZINFO
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 class Sheets:
     def __init__(self, spreadsheet_id: str):
-        creds, _ = google.auth.default(scopes=SCOPES)  # usa GOOGLE_APPLICATION_CREDENTIALS no Cloud Run Jobs
+        creds, _ = google.auth.default(scopes=SCOPES)
         self.service = build("sheets", "v4", credentials=creds, cache_discovery=False)
         self.spreadsheet_id = spreadsheet_id
 
-    # ==== utilidades genéricas ====
-    def read(self, range_a1: str) -> List[List[Any]]:
-        resp = self.service.spreadsheets().values().get(
-            spreadsheetId=self.spreadsheet_id, range=range_a1
-        ).execute()
-        return resp.get("values", [])
-
-    def write(self, range_a1: str, values: List[List[Any]]):
+    def _append(self, range_a1: str, values: List[List[Any]]):
         body = {"values": values}
-        self.service.spreadsheets().values().update(
+        return self.service.spreadsheets().values().append(
             spreadsheetId=self.spreadsheet_id, range=range_a1,
             valueInputOption="RAW", body=body
         ).execute()
 
-    def append(self, range_a1: str, values: List[List[Any]]):
-        body = {"values": values}
-        self.service.spreadsheets().values().append(
-            spreadsheetId=self.spreadsheet_id, range=range_a1,
-            valueInputOption="RAW", body=body
-        ).execute()
+    def append_first(self, ranges: List[str], values: List[List[Any]]):
+        last_err = None
+        for r in ranges:
+            try:
+                return self._append(r, values)
+            except HttpError as e:
+                last_err = e
+        raise last_err or RuntimeError("Falha ao gravar no Sheets.")
 
-    # ==== LOG padrão (DATA, HORA, STATUS) ====
+    def read_first(self, ranges: List[str]) -> List[List[Any]]:
+        last_err = None
+        for r in ranges:
+            try:
+                resp = self.service.spreadsheets().values().get(
+                    spreadsheetId=self.spreadsheet_id, range=r
+                ).execute()
+                return resp.get("values", [])
+            except HttpError as e:
+                last_err = e
+        if last_err:
+            raise last_err
+        return []
+
     def append_log(self, status: str):
         now = datetime.datetime.now(TZINFO)
         values = [[now.strftime("%Y-%m-%d"), now.strftime("%H:%M"), status]]
-        self.append(TAB_LOG, values)
+        self.append_first(["LOG!A:C"], values)
