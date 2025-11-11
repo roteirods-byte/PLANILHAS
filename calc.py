@@ -2,21 +2,21 @@
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-import pandas_ta as ta
+import ta  # usamos a biblioteca "ta" para indicadores
 from typing import Literal, Dict, Any
 
 Mode = Literal["SWING", "POSICIONAL"]
 
-# ====== PARÂMETROS INICIAIS (ajustáveis depois) ======
+# ====== PARÂMETROS INICIAIS ======
 ADX_LEN = 14
 EMA_FAST = 9
 EMA_SLOW = 21
 ATR_LEN = 14
 ATR_MULT_STOP = 1.5
 ADX_MIN = 20.0
-MIN_EXPECTED_PROFIT_PCT = 3.0   # filtro de 3%
-MIN_ASSERTIVIDADE = 65.0        # filtro de 65%
-# =====================================================
+MIN_EXPECTED_PROFIT_PCT = 3.0   # filtro 3%
+MIN_ASSERTIVIDADE = 65.0        # filtro 65%
+# =================================
 
 def _ensure(df: pd.DataFrame):
     req = {"open","high","low","close","volume"}
@@ -26,13 +26,27 @@ def _ensure(df: pd.DataFrame):
 def indicadores(df: pd.DataFrame) -> pd.DataFrame:
     _ensure(df)
     out = df.copy()
-    out["ema_fast"] = ta.ema(out["close"], length=EMA_FAST)
-    out["ema_slow"] = ta.ema(out["close"], length=EMA_SLOW)
-    adx = ta.adx(high=out["high"], low=out["low"], close=out["close"], length=ADX_LEN)
-    out["adx"]  = adx["ADX_"+str(ADX_LEN)]
-    out["+di"]  = adx["DMP_"+str(ADX_LEN)]
-    out["-di"]  = adx["DMN_"+str(ADX_LEN)]
-    out["atr"]  = ta.atr(high=out["high"], low=out["low"], close=out["close"], length=ATR_LEN)
+
+    # EMAs
+    ema_f = ta.trend.EMAIndicator(close=out["close"], window=EMA_FAST).ema_indicator()
+    ema_s = ta.trend.EMAIndicator(close=out["close"], window=EMA_SLOW).ema_indicator()
+    out["ema_fast"] = ema_f
+    out["ema_slow"] = ema_s
+
+    # ADX e +DI / -DI
+    adx_ind = ta.trend.ADXIndicator(
+        high=out["high"], low=out["low"], close=out["close"], window=ADX_LEN
+    )
+    out["adx"] = adx_ind.adx()
+    out["+di"] = adx_ind.adx_pos()
+    out["-di"] = adx_ind.adx_neg()
+
+    # ATR
+    atr_ind = ta.volatility.AverageTrueRange(
+        high=out["high"], low=out["low"], close=out["close"], window=ATR_LEN
+    )
+    out["atr"] = atr_ind.average_true_range()
+
     return out.dropna()
 
 def filtros_direcao(row) -> Literal["LONG","SHORT","NAO_ENTRAR"]:
@@ -52,7 +66,7 @@ def calculo_stop(entry: float, side: str, atr: float) -> float:
     return entry
 
 def alvo_basico(entry: float, side: str) -> float:
-    # Placeholder: mínimo de 3% — será substituído pelo alvo GBM/ETS no ajuste final.
+    # Placeholder: 3% mínimo (vamos trocar depois pelo alvo GBM/ETS)
     if side == "LONG":
         return entry * (1.0 + MIN_EXPECTED_PROFIT_PCT/100.0)
     if side == "SHORT":
@@ -60,11 +74,10 @@ def alvo_basico(entry: float, side: str) -> float:
     return entry
 
 def assertividade_placeholder() -> float:
-    # Placeholder: será substituído pelo blend teórico-empírico.
+    # Placeholder: será trocado pelo blend teórico-empírico
     return 70.0
 
 def decidir_sinal(df_ind: pd.DataFrame) -> Dict[str, Any]:
-    """Usa a última barra para decidir."""
     last = df_ind.iloc[-1]
     side = filtros_direcao(last)
     entry = float(last["close"])
@@ -84,12 +97,11 @@ def decidir_sinal(df_ind: pd.DataFrame) -> Dict[str, Any]:
     pnl_pct = (alvo/entry - 1.0) * 100.0 if side == "LONG" else (1.0 - alvo/entry) * 100.0
     assertiv = assertividade_placeholder()
 
-    # filtros finais
     if pnl_pct < MIN_EXPECTED_PROFIT_PCT or assertiv < MIN_ASSERTIVIDADE:
         return {
             "SIDE": "NÃO ENTRAR",
             "ENTRADA": round(entry, 3),
-            "ALVO": round(entry, 3),
+            "ALVO": round(alvo, 3),
             "PNL_PCT": round(pnl_pct, 2),
             "ASSERTIVIDADE_PCT": round(assertiv, 2),
             "SITUACAO": "Reprovado por filtros",
@@ -105,9 +117,5 @@ def decidir_sinal(df_ind: pd.DataFrame) -> Dict[str, Any]:
     }
 
 def pipeline_sinal(df_ohlcv: pd.DataFrame, modo: Mode = "SWING") -> Dict[str, Any]:
-    """
-    df_ohlcv: DataFrame OHLCV (index datetime), vindo de exchanges.fetch_ohlcv().
-    modo: 'SWING' usa 4H (chame com timeframe='4h'); 'POSICIONAL' usa 1D.
-    """
     df_ind = indicadores(df_ohlcv)
     return decidir_sinal(df_ind)
