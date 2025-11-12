@@ -49,3 +49,26 @@ class Sheets:
         now = datetime.datetime.now(TZINFO)
         values = [[now.strftime("%Y-%m-%d"), now.strftime("%H:%M"), status]]
         self.append_first(["LOG!A:C"], values)
+def list_sheet_titles(self):
+    meta = self.service.spreadsheets().get(
+        spreadsheetId=self.spreadsheet_id, fields="sheets.properties.title"
+    ).execute()
+    return [s["properties"]["title"] for s in meta.get("sheets", [])]
+
+def read_first(self, ranges: List[str]) -> List[List[Any]]:
+    last_err = None
+    for r in ranges:
+        try:
+            resp = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id, range=r
+            ).execute()
+            return resp.get("values", [])
+        except HttpError as e:
+            last_err = e
+    # diagnóstico: loga nomes de abas disponíveis
+    try:
+        titles = ", ".join(self.list_sheet_titles())
+        self.append_log(f"DIAG: Abas disponíveis: {titles}")
+    except Exception:
+        pass
+    raise last_err or RuntimeError("Falha ao ler intervalo no Sheets.")
