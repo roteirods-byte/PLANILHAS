@@ -1,74 +1,42 @@
 # sheets_client.py
-from __future__ import annotations
-import datetime
-from typing import List, Any
-import google.auth
+from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from config import TZINFO
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+CREDS_FILE = "/content/drive/MyDrive/chave-automacao.json"  # BLOCO 1A oficial
 
-class Sheets:
-    def __init__(self, spreadsheet_id: str):
-        creds, _ = google.auth.default(scopes=SCOPES)
-        self.service = build("sheets", "v4", credentials=creds, cache_discovery=False)
-        self.spreadsheet_id = spreadsheet_id
+def _svc():
+    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+    return build("sheets", "v4", credentials=creds).spreadsheets().values()
 
-    def _append(self, range_a1: str, values: List[List[Any]]):
-        body = {"values": values}
-        return self.service.spreadsheets().values().append(
-            spreadsheetId=self.spreadsheet_id, range=range_a1,
-            valueInputOption="RAW", body=body
-        ).execute()
+def a1_range(sheet_title: str, col_from="A", col_to="A", first_row=None, last_row=None) -> str:
+    # protege o título e evita ranges inválidos
+    title = sheet_title.replace("'", "''")
+    if first_row and last_row:
+        return f"'{title}'!{col_from}{first_row}:{col_to}{last_row}"
+    if first_row:
+        return f"'{title}'!{col_from}{first_row}:{col_to}"
+    if last_row:
+        return f"'{title}'!{col_from}:{col_to}{last_row}"
+    return f"'{title}'!{col_from}:{col_to}"
 
-    def append_first(self, ranges: List[str], values: List[List[Any]]):
-        last_err = None
-        for r in ranges:
-            try:
-                return self._append(r, values)
-            except HttpError as e:
-                last_err = e
-        raise last_err or RuntimeError("Falha ao gravar no Sheets.")
-
-    def read_first(self, ranges: List[str]) -> List[List[Any]]:
-        last_err = None
-        for r in ranges:
-            try:
-                resp = self.service.spreadsheets().values().get(
-                    spreadsheetId=self.spreadsheet_id, range=r
-                ).execute()
-                return resp.get("values", [])
-            except HttpError as e:
-                last_err = e
-        if last_err:
-            raise last_err
-        return []
-
-    def append_log(self, status: str):
-        now = datetime.datetime.now(TZINFO)
-        values = [[now.strftime("%Y-%m-%d"), now.strftime("%H:%M"), status]]
-        self.append_first(["LOG!A:C"], values)
-def list_sheet_titles(self):
-    meta = self.service.spreadsheets().get(
-        spreadsheetId=self.spreadsheet_id, fields="sheets.properties.title"
+def read_column(spreadsheet_id: str, sheet_title: str, col="A", skip_header=True):
+    rng = a1_range(sheet_title, col, col)
+    resp = _svc().get(
+        spreadsheetId=spreadsheet_id,
+        range=rng,
+        majorDimension="COLUMNS"
     ).execute()
-    return [s["properties"]["title"] for s in meta.get("sheets", [])]
+    vals = resp.get("values", [[]])
+    col_vals = vals[0] if vals else []
+    return [v.strip() for v in col_vals[1:]] if (skip_header and col_vals) else col_vals
 
-def read_first(self, ranges: List[str]) -> List[List[Any]]:
-    last_err = None
-    for r in ranges:
-        try:
-            resp = self.service.spreadsheets().values().get(
-                spreadsheetId=self.spreadsheet_id, range=r
-            ).execute()
-            return resp.get("values", [])
-        except HttpError as e:
-            last_err = e
-    # diagnóstico: loga nomes de abas disponíveis
-    try:
-        titles = ", ".join(self.list_sheet_titles())
-        self.append_log(f"DIAG: Abas disponíveis: {titles}")
-    except Exception:
-        pass
-    raise last_err or RuntimeError("Falha ao ler intervalo no Sheets.")
+def write_rows(spreadsheet_id: str, sheet_title: str, start_cell: str, rows):
+    rng = f"'{sheet_title.replace(\"'\",\"''\")}'!{start_cell}"
+    body = {"values": rows}
+    return _svc().update(
+        spreadsheetId=spreadsheet_id,
+        range=rng,
+        valueInputOption="RAW",
+        body=body
+    ).execute()
