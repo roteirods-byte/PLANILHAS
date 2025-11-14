@@ -1,42 +1,57 @@
-# sheets_client.py
+# sheets_client.py  — cliente simples e seguro para Google Sheets
+from __future__ import annotations
+from typing import List, Any, Optional
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
+# Caminho VALIDADO por você
+SERVICE_ACCOUNT_FILE = "/content/drive/MyDrive/chave-automacao.json"
+
+# Escopo mínimo para ler/gravar planilhas
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-CREDS_FILE = "/content/drive/MyDrive/chave-automacao.json"  # BLOCO 1A oficial
 
 def _svc():
-    creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-    return build("sheets", "v4", credentials=creds).spreadsheets().values()
+    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    return build("sheets", "v4", credentials=creds).spreadsheets()
 
-def a1_range(sheet_title: str, col_from="A", col_to="A", first_row=None, last_row=None) -> str:
-    # protege o título e evita ranges inválidos
-    title = sheet_title.replace("'", "''")
-    if first_row and last_row:
-        return f"'{title}'!{col_from}{first_row}:{col_to}{last_row}"
-    if first_row:
-        return f"'{title}'!{col_from}{first_row}:{col_to}"
-    if last_row:
-        return f"'{title}'!{col_from}:{col_to}{last_row}"
-    return f"'{title}'!{col_from}:{col_to}"
+def _a1_col(col: str, start_row: int = 2, end_row: Optional[int] = None) -> str:
+    """Gera A1 SEM ERRO (ex.: A2:A). Nunca retorna 'A:'."""
+    if end_row is None:
+        return f"{col}{start_row}:{col}"
+    return f"{col}{start_row}:{col}{end_row}"
 
-def read_column(spreadsheet_id: str, sheet_title: str, col="A", skip_header=True):
-    rng = a1_range(sheet_title, col, col)
-    resp = _svc().get(
+def read_col(spreadsheet_id: str, tab: str, col: str, start_row: int = 2) -> List[str]:
+    """Lê uma coluna (majorDimension=COLUMNS) e retorna uma lista de strings."""
+    a1 = f"{tab}!{_a1_col(col, start_row)}"
+    resp = _svc().values().get(
         spreadsheetId=spreadsheet_id,
-        range=rng,
-        majorDimension="COLUMNS"
+        range=a1,
+        majorDimension="COLUMNS",
     ).execute()
-    vals = resp.get("values", [[]])
-    col_vals = vals[0] if vals else []
-    return [v.strip() for v in col_vals[1:]] if (skip_header and col_vals) else col_vals
+    vals = resp.get("values", [])
+    return [v for v in (vals[0] if vals else []) if v]
 
-def write_rows(spreadsheet_id: str, sheet_title: str, start_cell: str, rows):
-    rng = f"'{sheet_title.replace(\"'\",\"''\")}'!{start_cell}"
+def read_range(spreadsheet_id: str, a1: str) -> List[List[Any]]:
+    return _svc().values().get(spreadsheetId=spreadsheet_id, range=a1).execute().get("values", [])
+
+def append_rows(spreadsheet_id: str, a1: str, rows: List[List[Any]]):
     body = {"values": rows}
-    return _svc().update(
+    return _svc().values().append(
         spreadsheetId=spreadsheet_id,
-        range=rng,
-        valueInputOption="RAW",
-        body=body
+        range=a1,
+        valueInputOption="USER_ENTERED",
+        insertDataOption="INSERT_ROWS",
+        body=body,
     ).execute()
+
+def update_range(spreadsheet_id: str, a1: str, rows: List[List[Any]]):
+    body = {"values": rows}
+    return _svc().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=a1,
+        valueInputOption="USER_ENTERED",
+        body=body,
+    ).execute()
+
+def clear_range(spreadsheet_id: str, a1: str):
+    return _svc().values().clear(spreadsheetId=spreadsheet_id, range=a1, body={}).execute()
