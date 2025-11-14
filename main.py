@@ -1,12 +1,11 @@
-# main.py — lê a aba MOEDAS e registra no LOG (BRT)
-
+# main.py — lê MOEDAS (coluna A) e registra no LOG (BRT)
 from datetime import datetime, timezone, timedelta
 from sheets_client import read_col, append_rows
 
 # ======= CONFIGURE AQUI =======
-SPREADSHEET_ID = "COLE_AQUI_O_ID"   # ID da sua planilha AUTOTRADER
-TAB_MOEDAS     = "MOEDAS"           # nome exato da aba
-TAB_LOG        = "LOG"              # nome exato da aba
+SPREADSHEET_ID = "COLE_AQUI_O_ID"   # ID da planilha AUTOTRADER (entre /d/ e /edit)
+TAB_MOEDAS     = "MOEDAS"
+TAB_LOG        = "LOG"
 # ==============================
 
 BRT = timezone(timedelta(hours=-3))
@@ -20,17 +19,15 @@ def log_status(msg: str):
     append_rows(SPREADSHEET_ID, f"{TAB_LOG}!A:C", [[data, hora, msg]])
 
 def ler_moedas() -> list[str]:
-    # Lê a coluna A a partir da linha 2 (pula cabeçalho): A2:A
+    # Lê A2:A (pula o cabeçalho) — corrige o erro "Unable to parse range"
     moedas = read_col(SPREADSHEET_ID, TAB_MOEDAS, "A", start_row=2)
-    # Normaliza (sem 'USDT' conforme seu padrão; remova se quiser listar tudo)
     norm = []
     for m in moedas:
         t = m.strip().upper()
         if t.endswith("USDT"):
-            t = t[:-4]  # remove sufixo USDT
+            t = t[:-4]
         if t:
             norm.append(t)
-    # Ordenação alfabética (se desejar visualizar já ordenado)
     norm.sort()
     return norm
 
@@ -41,7 +38,6 @@ def main():
         if not moedas:
             log_status("AVISO: MOEDAS vazia")
         else:
-            # Mostra só as 10 primeiras no LOG para não poluir
             preview = ", ".join(moedas[:10]) + ("..." if len(moedas) > 10 else "")
             log_status(f"MOEDAS lidas: {len(moedas)} → {preview}")
     except Exception as e:
