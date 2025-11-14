@@ -1,13 +1,11 @@
-# sheets_client.py — cliente seguro para Google Sheets (corrigido)
+# sheets_client.py — cliente Google Sheets (range seguro A2:A)
 from __future__ import annotations
 from typing import List, Any, Optional
+from pathlib import Path
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-# Caminho VALIDADO por você
-SERVICE_ACCOUNT_FILE = "/content/drive/MyDrive/chave-automacao.json"
-
-# Escopo mínimo para ler/gravar planilhas
+SERVICE_ACCOUNT_FILE = str(Path(__file__).with_name("chave-automacao.json"))
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 def _svc():
@@ -15,13 +13,12 @@ def _svc():
     return build("sheets", "v4", credentials=creds).spreadsheets()
 
 def _a1_col(col: str, start_row: int = 2, end_row: Optional[int] = None) -> str:
-    """Gera A1 sem erro (ex.: A2:A). Nunca retorna 'A:'."""
+    # Gera A2:A (nunca "A:")
     if end_row is None:
         return f"{col}{start_row}:{col}"
     return f"{col}{start_row}:{col}{end_row}"
 
 def read_col(spreadsheet_id: str, tab: str, col: str, start_row: int = 2) -> List[str]:
-    """Lê uma coluna (majorDimension=COLUMNS) e retorna lista de strings."""
     a1 = f"{tab}!{_a1_col(col, start_row)}"
     resp = _svc().values().get(
         spreadsheetId=spreadsheet_id,
