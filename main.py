@@ -1,100 +1,54 @@
-# main.py
-import logging, traceback, datetime
-from sheets_client import Sheets
-from exchanges import Exchanges
-from calc import pipeline_sinal
-from config import (
-    SHEETS_SPREADSHEET_ID, TZINFO, PRICE_DECIMALS, PCT_DECIMALS,
-    RANGE_LOG, RANGE_MOEDAS, RANGE_SAIDA2, RANGE_ENTRADA
-)
+# main.py — lê a aba MOEDAS e registra no LOG (BRT)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from datetime import datetime, timezone, timedelta
+from sheets_client import read_col, append_rows
 
-def _agora_brt():
-    now = datetime.datetime.now(TZINFO)
-    return now.strftime("%Y-%m-%d"), now.strftime("%H:%M")
+# ======= CONFIGURE AQUI =======
+SPREADSHEET_ID = "COLE_AQUI_O_ID"   # ID da sua planilha AUTOTRADER
+TAB_MOEDAS     = "MOEDAS"           # nome exato da aba
+TAB_LOG        = "LOG"              # nome exato da aba
+# ==============================
 
-def _ler_moedas(sh: Sheets):
-    vals = sh.read_first(RANGE_MOEDAS)
-    lst = [str(r[0]).strip().upper() for r in vals if r and str(r[0]).strip()]
-    return lst
+BRT = timezone(timedelta(hours=-3))
 
-def _append_saida2(sh: Sheets, row):
-    sh.append_first(RANGE_SAIDA2, [row])
+def now_brt():
+    dt = datetime.now(BRT)
+    return dt.date().isoformat(), dt.strftime("%H:%M")
 
-def _append_entrada_if_apto(sh: Sheets, coin, modo, preco_atual, res, data, hora):
-    if res.get("SITUACAO") != "Apto":
-        return
-    # ENTRADA: MOEDA | SIDE | MODO | ATUAL | ALVO | GANHO % | ARSSE. % | DATA | HORA
-    linha = [
-        coin,
-        res["SIDE"],
-        modo,
-        round(float(preco_atual), PRICE_DECIMALS),
-        round(float(res["ALVO"]), PRICE_DECIMALS),
-        round(float(res["PNL_PCT"]), PCT_DECIMALS),
-        round(float(res["ASSERTIVIDADE_PCT"]), PCT_DECIMALS),
-        data,
-        hora,
-    ]
-    sh.append_first(RANGE_ENTRADA, [linha])
+def log_status(msg: str):
+    data, hora = now_brt()
+    append_rows(SPREADSHEET_ID, f"{TAB_LOG}!A:C", [[data, hora, msg]])
 
-def run_job():
-    if not SHEETS_SPREADSHEET_ID:
-        raise RuntimeError("Defina SHEETS_SPREADSHEET_ID.")
+def ler_moedas() -> list[str]:
+    # Lê a coluna A a partir da linha 2 (pula cabeçalho): A2:A
+    moedas = read_col(SPREADSHEET_ID, TAB_MOEDAS, "A", start_row=2)
+    # Normaliza (sem 'USDT' conforme seu padrão; remova se quiser listar tudo)
+    norm = []
+    for m in moedas:
+        t = m.strip().upper()
+        if t.endswith("USDT"):
+            t = t[:-4]  # remove sufixo USDT
+        if t:
+            norm.append(t)
+    # Ordenação alfabética (se desejar visualizar já ordenado)
+    norm.sort()
+    return norm
 
-    sh = Sheets(SHEETS_SPREADSHEET_ID)
-    sh.append_log("JOB INICIADO")
-
-    coins = _ler_moedas(sh)
-    ex = Exchanges()
-    data, hora = _agora_brt()
-
-    for coin in coins:
-        try:
-            preco_atual, _src = ex.get_price(coin)
-
-            for modo, tf in [("SWING", "4h"), ("POSICIONAL", "1d")]:
-                try:
-                    ohlcv = ex.fetch_ohlcv(coin, timeframe=tf, limit=400)
-                    res = pipeline_sinal(ohlcv, modo=modo)
-
-                    # SAÍDA 2: PAR | SIDE | MODO | ENTRADA | ATUAL | ALVO | PNL % | SITUAÇÃO | DATA | HORA | ALAV
-                    linha_saida2 = [
-                        coin,
-                        res["SIDE"],
-                        modo,
-                        round(float(res["ENTRADA"]), PRICE_DECIMALS),
-                        round(float(preco_atual), PRICE_DECIMALS),
-                        round(float(res["ALVO"]), PRICE_DECIMALS),
-                        round(float(res["PNL_PCT"]), PCT_DECIMALS),
-                        res["SITUACAO"],
-                        data,
-                        hora,
-                        ""
-                    ]
-                    _append_saida2(sh, linha_saida2)
-                    _append_entrada_if_apto(sh, coin, modo, preco_atual, res, data, hora)
-
-                except Exception as e_inner:
-                    sh.append_log(f"ERRO {coin} {modo}: {e_inner.__class__.__name__}")
-                    continue
-
-        except Exception as e_coin:
-            sh.append_log(f"ERRO {coin}: {e_coin.__class__.__name__}")
-            continue
-
-    sh.append_log("JOB OK")
-    logging.info("Execução finalizada com sucesso.")
+def main():
+    log_status("JOB INICIADO")
+    try:
+        moedas = ler_moedas()
+        if not moedas:
+            log_status("AVISO: MOEDAS vazia")
+        else:
+            # Mostra só as 10 primeiras no LOG para não poluir
+            preview = ", ".join(moedas[:10]) + ("..." if len(moedas) > 10 else "")
+            log_status(f"MOEDAS lidas: {len(moedas)} → {preview}")
+    except Exception as e:
+        log_status(f"JOB ERRO: {e}")
+        raise
+    else:
+        log_status("JOB OK")
 
 if __name__ == "__main__":
-    try:
-        run_job()
-    except Exception as e:
-        try:
-            sh = Sheets(SHEETS_SPREADSHEET_ID) if SHEETS_SPREADSHEET_ID else None
-            if sh:
-                sh.append_log(f"JOB ERRO: {e.__class__.__name__}: {e}")
-        finally:
-            logging.error("Falha na execução:\n%s", traceback.format_exc())
-            raise
+    main()
