@@ -1,50 +1,54 @@
-# sheets_client.py
 import os
-from typing import List, Tuple
-from google.oauth2 import service_account
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+import config
 
+# JSON na mesma pasta
+JSON_PATH = os.path.join(os.path.dirname(__file__), "chave-automacao.json")
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-RANGE_LOG = "LOG!A:C"
-RANGES_MOEDAS = ["MOEDAS!A2:A", "MOEDAS!A:A", "MOEDA!A2:A", "Moedas!A2:A", "Moeda!A2:A"]
 
-def _client():
-    key_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if not key_path or not os.path.exists(key_path):
-        raise RuntimeError(f"Credencial não encontrada em GOOGLE_APPLICATION_CREDENTIALS: {key_path}")
-    creds = service_account.Credentials.from_service_account_file(key_path, scopes=SCOPES)
-    return build("sheets", "v4", credentials=creds).spreadsheets()
+def _service():
+    creds = Credentials.from_service_account_file(JSON_PATH, scopes=SCOPES)
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
-def _get_first_range(spreadsheet_id: str, ranges: List[str]) -> Tuple[str, list]:
-    svc = _client()
-    for r in ranges:
+def _agora():
+    return datetime.now(ZoneInfo("America/Sao_Paulo"))
+
+def _primeiro_range_valido(ranges):
+    svc = _service()
+    for rg in ranges:
         try:
-            resp = svc.values().get(spreadsheetId=spreadsheet_id, range=r, majorDimension="ROWS").execute()
-            values = resp.get("values", [])
-            if values is not None:
-                return r, values
+            resp = svc.spreadsheets().values().get(
+                spreadsheetId=config.SHEETS_SPREADSHEET_ID,
+                range=rg
+            ).execute()
+            vals = resp.get("values", [])
+            if vals:
+                return rg, vals
         except Exception:
             continue
-    raise RuntimeError(f"Nenhum range válido: {ranges}")
+    return None, []
 
-def get_moedas(spreadsheet_id: str) -> List[str]:
-    _, rows = _get_first_range(spreadsheet_id, RANGES_MOEDAS)
+def get_moedas():
+    _, rows = _primeiro_range_valido(config.RANGE_MOEDAS)
     out = []
-    for row in rows:
-        cel = (row[0] if row else "").strip()
-        if not cel:
+    for r in rows:
+        if not r:
             continue
-        t = cel.replace("/USDT", "").replace("-USDT", "").upper()
-        out.append(t)
+        t = str(r[0]).strip().upper()
+        if t:
+            out.append(t)
     return out
 
-def append_log(spreadsheet_id: str, data: str, hora: str, status: str) -> None:
-    svc = _client()
-    body = {"values": [[data, hora, status]]}
-    svc.values().append(
-        spreadsheetId=spreadsheet_id,
-        range=RANGE_LOG,
-        valueInputOption="USER_ENTERED",
+def append_log(texto):
+    dt = _agora()
+    linha = [[dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M"), texto]]
+    _service().spreadsheets().values().append(
+        spreadsheetId=config.SHEETS_SPREADSHEET_ID,
+        range=config.RANGE_LOG[0],  # LOG!A:C
+        valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
-        body=body
+        body={"values": linha}
     ).execute()
