@@ -1,4 +1,4 @@
-# sheets_client.py  — cliente simples e seguro para Google Sheets
+# sheets_client.py — cliente seguro para Google Sheets (corrigido)
 from __future__ import annotations
 from typing import List, Any, Optional
 from google.oauth2.service_account import Credentials
@@ -15,13 +15,13 @@ def _svc():
     return build("sheets", "v4", credentials=creds).spreadsheets()
 
 def _a1_col(col: str, start_row: int = 2, end_row: Optional[int] = None) -> str:
-    """Gera A1 SEM ERRO (ex.: A2:A). Nunca retorna 'A:'."""
+    """Gera A1 sem erro (ex.: A2:A). Nunca retorna 'A:'."""
     if end_row is None:
         return f"{col}{start_row}:{col}"
     return f"{col}{start_row}:{col}{end_row}"
 
 def read_col(spreadsheet_id: str, tab: str, col: str, start_row: int = 2) -> List[str]:
-    """Lê uma coluna (majorDimension=COLUMNS) e retorna uma lista de strings."""
+    """Lê uma coluna (majorDimension=COLUMNS) e retorna lista de strings."""
     a1 = f"{tab}!{_a1_col(col, start_row)}"
     resp = _svc().values().get(
         spreadsheetId=spreadsheet_id,
