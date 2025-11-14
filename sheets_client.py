@@ -1,60 +1,50 @@
 # sheets_client.py
 import os
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
+from typing import List, Tuple
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
-# Escopo para Google Sheets
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-TZ = ZoneInfo("America/Sao_Paulo")
+RANGE_LOG = "LOG!A:C"
+RANGES_MOEDAS = ["MOEDAS!A2:A", "MOEDAS!A:A", "MOEDA!A2:A", "Moedas!A2:A", "Moeda!A2:A"]
 
-def _build_service():
-    json_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "chave-automacao.json")
-    creds = service_account.Credentials.from_service_account_file(json_path, scopes=SCOPES)
-    return build("sheets", "v4", credentials=creds, cache_discovery=False)
+def _client():
+    key_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if not key_path or not os.path.exists(key_path):
+        raise RuntimeError(f"Credencial não encontrada em GOOGLE_APPLICATION_CREDENTIALS: {key_path}")
+    creds = service_account.Credentials.from_service_account_file(key_path, scopes=SCOPES)
+    return build("sheets", "v4", credentials=creds).spreadsheets()
 
-def append_log(spreadsheet_id: str, texto: str):
-    svc = _build_service()
-    agora = datetime.now(TZ)
-    valores = [[agora.strftime("%Y-%m-%d"), agora.strftime("%H:%M"), texto]]
-    body = {"values": valores}
-    svc.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id,
-        range="LOG!A:C",
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body=body,
-    ).execute()
-
-def ler_moedas(spreadsheet_id: str):
-    """Lê a coluna de moedas com tolerância a nomes/acentos."""
-    svc = _build_service()
-    candidatos = ["MOEDAS!A2:A", "MOEDAS!A:A", "Moedas!A2:A", "MOEDA!A2:A", "Moeda!A2:A"]
-    ultima = None
-    for rg in candidatos:
+def _get_first_range(spreadsheet_id: str, ranges: List[str]) -> Tuple[str, list]:
+    svc = _client()
+    for r in ranges:
         try:
-            resp = svc.spreadsheets().values().get(
-                spreadsheetId=spreadsheet_id, range=rg
-            ).execute()
-            rows = resp.get("values", [])
-            # Normaliza a coluna A
-            col = [r[0] for r in rows if r]
-            # Limpeza
-            out = []
-            for s in col:
-                t = s.strip().upper()
-                if not t or t in ("PAR", "MOEDAS", "MOEDA"):
-                    continue
-                t = t.replace("USDT", "").strip()
-                out.append(t)
-            if out:
-                return out
-        except HttpError as e:
-            ultima = e
+            resp = svc.values().get(spreadsheetId=spreadsheet_id, range=r, majorDimension="ROWS").execute()
+            values = resp.get("values", [])
+            if values is not None:
+                return r, values
+        except Exception:
             continue
-    if ultima:
-        raise ultima
-    return []
+    raise RuntimeError(f"Nenhum range válido: {ranges}")
+
+def get_moedas(spreadsheet_id: str) -> List[str]:
+    _, rows = _get_first_range(spreadsheet_id, RANGES_MOEDAS)
+    out = []
+    for row in rows:
+        cel = (row[0] if row else "").strip()
+        if not cel:
+            continue
+        t = cel.replace("/USDT", "").replace("-USDT", "").upper()
+        out.append(t)
+    return out
+
+def append_log(spreadsheet_id: str, data: str, hora: str, status: str) -> None:
+    svc = _client()
+    body = {"values": [[data, hora, status]]}
+    svc.values().append(
+        spreadsheetId=spreadsheet_id,
+        range=RANGE_LOG,
+        valueInputOption="USER_ENTERED",
+        insertDataOption="INSERT_ROWS",
+        body=body
+    ).execute()
