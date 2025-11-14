@@ -1,55 +1,61 @@
-# sheets_client.py — cliente Google Sheets (range seguro A2:A)
-from __future__ import annotations
-from typing import List, Any, Optional
-from pathlib import Path
-from google.oauth2.service_account import Credentials
+# sheets_client.py
+import os
+from datetime import datetime
+from typing import List
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import config
 
 SERVICE_ACCOUNT_FILE = os.path.expanduser('~/autotrader_job/chave-automacao.json')
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-creds = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 
-def _svc():
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    return build("sheets", "v4", credentials=creds).spreadsheets()
 
-def _a1_col(col: str, start_row: int = 2, end_row: Optional[int] = None) -> str:
-    # Gera A2:A (nunca "A:")
-    if end_row is None:
-        return f"{col}{start_row}:{col}"
-    return f"{col}{start_row}:{col}{end_row}"
+def _service():
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
+    return build('sheets', 'v4', credentials=creds).spreadsheets()
 
-def read_col(spreadsheet_id: str, tab: str, col: str, start_row: int = 2) -> List[str]:
-    a1 = f"{tab}!{_a1_col(col, start_row)}"
-    resp = _svc().values().get(
-        spreadsheetId=spreadsheet_id,
-        range=a1,
-        majorDimension="COLUMNS",
-    ).execute()
-    vals = resp.get("values", [])
-    return [v for v in (vals[0] if vals else []) if v]
 
-def read_range(spreadsheet_id: str, a1: str) -> List[List[Any]]:
-    return _svc().values().get(spreadsheetId=spreadsheet_id, range=a1).execute().get("values", [])
-
-def append_rows(spreadsheet_id: str, a1: str, rows: List[List[Any]]):
-    body = {"values": rows}
-    return _svc().values().append(
-        spreadsheetId=spreadsheet_id,
-        range=a1,
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body=body,
+def _read_column(sheet_name: str, col: str, start_row: int = 2) -> List[str]:
+    """
+    Lê uma coluna de forma SEGURA. Ex.: 'MOEDAS', 'A', 2 -> 'MOEDAS!A2:A'
+    (evita o erro 'Unable to parse range')
+    """
+    rng = f"{sheet_name}!{col}{start_row}:{col}"
+    resp = _service().values().get(
+        spreadsheetId=config.SHEET_ID,
+        range=rng,
+        majorDimension='COLUMNS'
     ).execute()
 
-def update_range(spreadsheet_id: str, a1: str, rows: List[List[Any]]):
-    body = {"values": rows}
-    return _svc().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=a1,
-        valueInputOption="USER_ENTERED",
-        body=body,
-    ).execute()
+    vals = resp.get('values', [])
+    if not vals:
+        return []
 
-def clear_range(spreadsheet_id: str, a1: str):
-    return _svc().values().clear(spreadsheetId=spreadsheet_id, range=a1, body={}).execute()
+    # limpa vazios e normaliza
+    out = []
+    for v in vals[0]:
+        s = str(v).strip().upper()
+        if s:
+            out.append(s)
+    return out
+
+
+def get_moedas() -> List[str]:
+    """Lê a lista de moedas na aba MOEDAS (coluna A, a partir da linha 2)."""
+    return _read_column(config.TABS['MOEDAS'], 'A', 2)
+
+
+def append_log(status: str):
+    """Escreve uma linha em LOG: DATA | HORA | STATUS"""
+    now = datetime.now()
+    row = [[now.strftime('%Y-%m-%d'), now.strftime('%H:%M'), status]]
+    rng = f"{config.TABS['LOG']}!A:C"
+    _service().values().append(
+        spreadsheetId=config.SHEET_ID,
+        range=rng,
+        valueInputOption='USER_ENTERED',
+        insertDataOption='INSERT_ROWS',
+        body={'values': row},
+    ).execute()
