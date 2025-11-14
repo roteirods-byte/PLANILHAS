@@ -1,61 +1,60 @@
 # sheets_client.py
 import os
 from datetime import datetime
-from typing import List
+from zoneinfo import ZoneInfo
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import config
+from googleapiclient.errors import HttpError
 
-SERVICE_ACCOUNT_FILE = os.path.expanduser('~/autotrader_job/chave-automacao.json')
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+# Escopo para Google Sheets
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+TZ = ZoneInfo("America/Sao_Paulo")
 
+def _build_service():
+    json_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "chave-automacao.json")
+    creds = service_account.Credentials.from_service_account_file(json_path, scopes=SCOPES)
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
-def _service():
-    creds = service_account.Credentials.from_service_account_file(
-        SERVICE_ACCOUNT_FILE, scopes=SCOPES
-    )
-    return build('sheets', 'v4', credentials=creds).spreadsheets()
-
-
-def _read_column(sheet_name: str, col: str, start_row: int = 2) -> List[str]:
-    """
-    Lê uma coluna de forma SEGURA. Ex.: 'MOEDAS', 'A', 2 -> 'MOEDAS!A2:A'
-    (evita o erro 'Unable to parse range')
-    """
-    rng = f"{sheet_name}!{col}{start_row}:{col}"
-    resp = _service().values().get(
-        spreadsheetId=config.SHEET_ID,
-        range=rng,
-        majorDimension='COLUMNS'
+def append_log(spreadsheet_id: str, texto: str):
+    svc = _build_service()
+    agora = datetime.now(TZ)
+    valores = [[agora.strftime("%Y-%m-%d"), agora.strftime("%H:%M"), texto]]
+    body = {"values": valores}
+    svc.spreadsheets().values().append(
+        spreadsheetId=spreadsheet_id,
+        range="LOG!A:C",
+        valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
+        body=body,
     ).execute()
 
-    vals = resp.get('values', [])
-    if not vals:
-        return []
-
-    # limpa vazios e normaliza
-    out = []
-    for v in vals[0]:
-        s = str(v).strip().upper()
-        if s:
-            out.append(s)
-    return out
-
-
-def get_moedas() -> List[str]:
-    """Lê a lista de moedas na aba MOEDAS (coluna A, a partir da linha 2)."""
-    return _read_column(config.TABS['MOEDAS'], 'A', 2)
-
-
-def append_log(status: str):
-    """Escreve uma linha em LOG: DATA | HORA | STATUS"""
-    now = datetime.now()
-    row = [[now.strftime('%Y-%m-%d'), now.strftime('%H:%M'), status]]
-    rng = f"{config.TABS['LOG']}!A:C"
-    _service().values().append(
-        spreadsheetId=config.SHEET_ID,
-        range=rng,
-        valueInputOption='USER_ENTERED',
-        insertDataOption='INSERT_ROWS',
-        body={'values': row},
-    ).execute()
+def ler_moedas(spreadsheet_id: str):
+    """Lê a coluna de moedas com tolerância a nomes/acentos."""
+    svc = _build_service()
+    candidatos = ["MOEDAS!A2:A", "MOEDAS!A:A", "Moedas!A2:A", "MOEDA!A2:A", "Moeda!A2:A"]
+    ultima = None
+    for rg in candidatos:
+        try:
+            resp = svc.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id, range=rg
+            ).execute()
+            rows = resp.get("values", [])
+            # Normaliza a coluna A
+            col = [r[0] for r in rows if r]
+            # Limpeza
+            out = []
+            for s in col:
+                t = s.strip().upper()
+                if not t or t in ("PAR", "MOEDAS", "MOEDA"):
+                    continue
+                t = t.replace("USDT", "").strip()
+                out.append(t)
+            if out:
+                return out
+        except HttpError as e:
+            ultima = e
+            continue
+    if ultima:
+        raise ultima
+    return []
